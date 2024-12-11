@@ -4,12 +4,13 @@ import { ActivityValue, ActivityValueAttributes } from "@/models/ActivityValue";
 import { InventoryValueAttributes } from "@/models/InventoryValue";
 import {
   DirectMeasure,
+  ExtraField,
   findMethodology,
   MANUAL_INPUT_HIERARCHY,
   Methodology,
 } from "@/util/form-schema";
 import { db } from "@/models";
-import { Op, literal, fn, col, where } from "sequelize";
+import { col, fn, literal, Op, where } from "sequelize";
 import {
   ManualInputValidationError,
   ManualInputValidationErrorCodes,
@@ -63,6 +64,7 @@ export default class ManualInputValidationService {
       const methodologyId = inventoryValue.inputMethodology as string;
 
       let methodology: Methodology | DirectMeasure | undefined;
+      let selectedActivityIndex = 0;
 
       if (methodologyId === "direct-measure") {
         methodology = MANUAL_INPUT_HIERARCHY[referenceNumber]
@@ -78,9 +80,30 @@ export default class ManualInputValidationService {
       }
 
       // extract extra fields from the methodology
-      let extraFields =
-        (methodology as Methodology)?.activities?.[0]?.["extra-fields"] ||
-        (methodology as DirectMeasure)["extra-fields"];
+      let extraFields: ExtraField[] = [];
+
+      if (methodologyId === "direct-measure") {
+        extraFields = (methodology as DirectMeasure)[
+          "extra-fields"
+        ] as ExtraField[];
+      } else {
+        let scopedMethodology = methodology as Methodology;
+        let selectedActivityOption =
+          activityValueParams.metadata?.[
+            scopedMethodology.activitySelectionField?.id as string
+          ];
+
+        const foundIndex =
+          scopedMethodology.activities?.findIndex(
+            (ac) => ac.activitySelectedOption === selectedActivityOption,
+          ) ?? 0;
+
+        selectedActivityIndex = foundIndex >= 0 ? foundIndex : 0;
+
+        extraFields = scopedMethodology.activities?.[selectedActivityIndex][
+          "extra-fields"
+        ] as ExtraField[];
+      }
 
       if (extraFields && extraFields.length > 0) {
         // handle required fields validation
@@ -106,7 +129,7 @@ export default class ManualInputValidationService {
 
       // handle non direct measure methodologies
       if (activityRules && activityRules.length > 0) {
-        let activityRule = activityRules[0];
+        let activityRule = activityRules[selectedActivityIndex];
         let uniqueBy = activityRule["unique-by"];
         if (uniqueBy) {
           await this.uniqueByValidation({
@@ -173,7 +196,7 @@ export default class ManualInputValidationService {
       } else {
         // using the LOWER function to make the comparison case-insensitive
         return where(fn("lower", literal(`activity_data_jsonb->>'${field}'`)), {
-          [Op.eq]: value.toLowerCase(),
+          [Op.eq]: value?.toLowerCase(),
         });
       }
     });

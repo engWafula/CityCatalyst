@@ -1,6 +1,6 @@
+import type { Optional } from "sequelize";
 import * as Sequelize from "sequelize";
 import { DataTypes, Model } from "sequelize";
-import type { Optional } from "sequelize";
 import type { Inventory, InventoryId } from "./Inventory";
 import type { SubCategory, SubCategoryId } from "./SubCategory";
 import type {
@@ -10,6 +10,7 @@ import type {
 import type { Sector, SectorId } from "./Sector";
 import type { SubSector, SubSectorId } from "./SubSector";
 import type { GasValue, GasValueId } from "./GasValue";
+import type { ActivityValue, ActivityValueId } from "./ActivityValue";
 
 export interface InventoryValueAttributes {
   id: string;
@@ -104,7 +105,7 @@ export class InventoryValue
   >;
   createSubcategory!: Sequelize.BelongsToCreateAssociationMixin<SubCategory>;
   // InventoryValue belongsTo DataSource via datasourceId
-  dataSource!: DataSource;
+  dataSource?: DataSource;
   getDataSource!: Sequelize.BelongsToGetAssociationMixin<DataSource>;
   setDataSource!: Sequelize.BelongsToSetAssociationMixin<
     DataSource,
@@ -129,6 +130,40 @@ export class InventoryValue
   hasGasValue!: Sequelize.HasManyHasAssociationMixin<GasValue, GasValueId>;
   hasGasValues!: Sequelize.HasManyHasAssociationsMixin<GasValue, GasValueId>;
   countGasValues!: Sequelize.HasManyCountAssociationsMixin;
+
+  // InventoryValue hasMany ActivityValue via inventoryValueId
+  activityValues!: ActivityValue[];
+  getActivityValues!: Sequelize.HasManyGetAssociationsMixin<ActivityValue>;
+  setActivityValues!: Sequelize.HasManySetAssociationsMixin<
+    ActivityValue,
+    ActivityValueId
+  >;
+  addActivityValue!: Sequelize.HasManyAddAssociationMixin<
+    ActivityValue,
+    ActivityValueId
+  >;
+  addActivityValues!: Sequelize.HasManyAddAssociationsMixin<
+    ActivityValue,
+    ActivityValueId
+  >;
+  createActivityValue!: Sequelize.HasManyCreateAssociationMixin<ActivityValue>;
+  removeActivityValue!: Sequelize.HasManyRemoveAssociationMixin<
+    ActivityValue,
+    ActivityValueId
+  >;
+  removeActivityValues!: Sequelize.HasManyRemoveAssociationsMixin<
+    ActivityValue,
+    ActivityValueId
+  >;
+  hasActivityValue!: Sequelize.HasManyHasAssociationMixin<
+    ActivityValue,
+    ActivityValueId
+  >;
+  hasActivityValues!: Sequelize.HasManyHasAssociationsMixin<
+    ActivityValue,
+    ActivityValueId
+  >;
+  countActivityValues!: Sequelize.HasManyCountAssociationsMixin;
 
   static initModel(sequelize: Sequelize.Sequelize): typeof InventoryValue {
     return InventoryValue.init(
@@ -238,6 +273,32 @@ export class InventoryValue
             fields: [{ name: "id" }],
           },
         ],
+        hooks: {
+          afterCreate: async (inventoryValue: InventoryValue) => {
+            if (inventoryValue.inventoryId) {
+              const inventory = await inventoryValue.getInventory();
+              if (inventory) {
+                await inventory.update({ lastUpdated: new Date() });
+              }
+            }
+          },
+          afterUpdate: async (inventoryValue: InventoryValue) => {
+            if (inventoryValue.inventoryId) {
+              const inventory = await inventoryValue.getInventory();
+              if (inventory) {
+                await inventory.update({ lastUpdated: new Date() });
+              }
+            }
+          },
+          afterDestroy: async (inventoryValue: InventoryValue) => {
+            if (inventoryValue.inventoryId) {
+              const inventory = await inventoryValue.getInventory();
+              if (inventory) {
+                await inventory.update({ lastUpdated: new Date() });
+              }
+            }
+          },
+        },
       },
     );
   }

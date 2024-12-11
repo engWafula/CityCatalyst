@@ -1,25 +1,13 @@
 "use client";
 
 import { useTranslation } from "@/i18n/client";
-import { ArrowBackIcon, ArrowForwardIcon, LinkIcon } from "@chakra-ui/icons";
+import { ArrowBackIcon } from "@chakra-ui/icons";
 import { Link } from "@chakra-ui/next-js";
-import {
-  Box,
-  Button,
-  Card,
-  Divider,
-  Flex,
-  Heading,
-  Icon,
-  Text,
-} from "@chakra-ui/react";
-import NextLink from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { Box, Card, Grid, GridItem, Heading, Text } from "@chakra-ui/react";
 import { Trans } from "react-i18next/TransWithoutContext";
-import { MdOutlineHomeWork } from "react-icons/md";
-import { FiTrash2, FiTruck } from "react-icons/fi";
-import { BsPlus } from "react-icons/bs";
 import AddDataCard from "@/components/Cards/add-data-card";
+import { getSectorsForInventory, InventoryTypeEnum } from "@/util/constants";
+import { api } from "@/services/api";
 
 export default function AddDataIntro({
   params: { lng, inventory },
@@ -28,35 +16,10 @@ export default function AddDataIntro({
 }) {
   const { t } = useTranslation(lng, "data");
 
-  const SECTORCARD_DATA = [
-    {
-      sectorName: t("stationary-energy"),
-      testId: "stationary-energy-sector-card",
-      descriptionText: t("stationary-energy-details"),
-      scope: t("stationary-energy-scope"),
-      icon: MdOutlineHomeWork,
-      step: 1,
-    },
-    {
-      sectorName: t("transportation"),
-      testId: "transportation-sector-card",
-      descriptionText: t("transportation-details"),
-      scope: t("transportation-scope"),
-      icon: FiTruck,
-      step: 2,
-    },
-    {
-      sectorName: t("waste"),
-      testId: "waste-sector-card",
-      descriptionText: t("waste-details"),
-      scope: t("waste-scope"),
-      icon: FiTrash2,
-      step: 3,
-    },
-  ];
+  const { data: inventoryData } = api.useGetInventoryQuery(inventory);
 
   return (
-    <Box className="pt-16 pb-16 w-[1090px] max-w-full mx-auto px-4">
+    <Box className="pt-16 pb-16  w-[90%] max-w-full mx-auto px-4">
       <Link href="/" _hover={{ textDecoration: "none" }}>
         <Box display="flex" alignItems="center" gap="8px">
           <ArrowBackIcon boxSize={6} />
@@ -83,7 +46,14 @@ export default function AddDataIntro({
         {t("data-heading")}
       </Heading>
       <Text color="content.tertiary" className="w-full">
-        <Trans i18nKey="data-details" t={t}>
+        <Trans
+          i18nKey={
+            inventoryData?.inventoryType === InventoryTypeEnum.GPC_BASIC
+              ? "data-details"
+              : "data-details-+"
+          }
+          t={t}
+        >
           Add data or connect third-party data for your city and complete your
           city&apos;s emission inventory using the GPC Basic methodology.{" "}
           <Link
@@ -109,23 +79,36 @@ export default function AddDataIntro({
           {t("data-view-heading")}
         </Heading>
         <Text color="content.tertiary">{t("data-view-details")}</Text>
-        <Flex className="space-x-4" mt={12}>
-          {SECTORCARD_DATA.map(
-            ({ sectorName, testId, descriptionText, scope, icon, step }) => (
-              <AddDataCard
-                testId={testId}
-                key={sectorName}
-                title={sectorName}
-                description={descriptionText}
-                icon={icon}
-                scopeText={scope}
-                buttonText={t("add-data")}
-                step={step}
-                inventory={inventory}
-              />
-            ),
-          )}
-        </Flex>
+        <Grid templateColumns="repeat(3, 1fr)" gap={4} mt={12}>
+          {inventoryData &&
+            getSectorsForInventory(inventoryData.inventoryType).map(
+              ({ name, testId, description, icon, number, inventoryTypes }) => {
+                const requiredScopes = inventoryData?.inventoryType
+                  ? inventoryTypes[inventoryData.inventoryType].scopes
+                  : [];
+                const scopesRequiredText =
+                  inventoryData?.inventoryType ===
+                  InventoryTypeEnum.GPC_BASIC_PLUS
+                    ? "scope-required-for-basic-+"
+                    : "scope-required-for-basic";
+                return (
+                  <GridItem key={name}>
+                    <AddDataCard
+                      testId={testId}
+                      title={t(name)}
+                      description={t(description)}
+                      // @ts-ignore
+                      icon={icon}
+                      scopeText={`${t(scopesRequiredText)}: ${requiredScopes.join(", ")}`}
+                      buttonText={t("add-data")}
+                      number={number}
+                      inventory={inventory}
+                    />
+                  </GridItem>
+                );
+              },
+            )}
+        </Grid>
       </Card>
     </Box>
   );

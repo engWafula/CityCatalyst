@@ -26,6 +26,7 @@ import { MdLogout } from "react-icons/md";
 import Cookies from "js-cookie";
 import { useParams } from "next/navigation";
 import { api } from "@/services/api";
+import { useEffect } from "react";
 
 function countryFromLanguage(language: string) {
   return language == "en" ? "us" : language;
@@ -38,9 +39,11 @@ function logOut() {
 export function NavigationBar({
   lng,
   showNav = true,
+  isPublic = false,
 }: {
   lng: string;
   showNav?: boolean;
+  isPublic?: boolean;
 }) {
   const { t } = useTranslation(lng, "navigation");
   const { inventory } = useParams();
@@ -56,6 +59,23 @@ export function NavigationBar({
     const newPath = location.pathname.replace(/^\/[A-Za-z]+/, `/${language}`);
     history.replaceState(null, "", newPath);
   };
+
+  // Checks if language is set in cookie and updates URL if not
+  window.addEventListener("popstate", () => {
+    const cookieLanguage = Cookies.get("i18next");
+    if (cookieLanguage) {
+      const currentPath = location.pathname;
+
+      if (!currentPath.startsWith(`/${cookieLanguage}`)) {
+        const newPath = currentPath.replace(
+          /^\/[A-Za-z]+/,
+          `/${cookieLanguage}`,
+        );
+        history.replaceState(null, "", newPath);
+      }
+    }
+  });
+
   const { data: session, status } = useSession();
   const { data: userInfo, isLoading: isUserInfoLoading } =
     api.useGetUserInfoQuery();
@@ -80,19 +100,31 @@ export function NavigationBar({
         </Heading>
       </NextLink>
       <div className="w-full" />
-      {showNav && (
-        <NextLink href="/">
-          <Heading color="base.light" size="sm" className="opacity-75" ml={6}>
-            {t("dashboard")}
-          </Heading>
-        </NextLink>
+      {showNav && !isPublic && (
+        <>
+          {" "}
+          <NextLink href={`/${inventory ? inventory : currentInventoryId}`}>
+            <Heading color="base.light" size="sm" className="opacity-75" ml={6}>
+              {t("dashboard")}
+            </Heading>
+          </NextLink>
+          <NextLink
+            target="_blank"
+            rel="help noopener noreferrer"
+            href="https://citycatalyst.openearth.org/learning-hub"
+          >
+            <Heading
+              color="base.light"
+              size="sm"
+              className="opacity-75 !text-nowrap"
+              ml={6}
+            >
+              {t("learning-hub")}
+            </Heading>
+          </NextLink>
+          <Divider orientation="vertical" h={6} />
+        </>
       )}
-      <NextLink href="/help">
-        <Heading color="base.light" size="sm" className="opacity-75" ml={6}>
-          {t("help")}
-        </Heading>
-      </NextLink>
-      <Divider orientation="vertical" h={6} />
       <Menu>
         {({ isOpen }) => (
           <>
@@ -104,7 +136,11 @@ export function NavigationBar({
               minW="120px"
               leftIcon={
                 <CircleFlag
-                  countryCode={countryFromLanguage(i18next.language)}
+                  countryCode={
+                    countryFromLanguage(i18next.language) === "pt"
+                      ? "br"
+                      : countryFromLanguage(i18next.language)
+                  }
                   width="24"
                 />
               }
@@ -126,7 +162,11 @@ export function NavigationBar({
                   key={language}
                 >
                   <CircleFlag
-                    countryCode={countryFromLanguage(language)}
+                    countryCode={
+                      countryFromLanguage(language) === "pt"
+                        ? "br"
+                        : countryFromLanguage(language)
+                    }
                     width="24"
                     className="mr-4"
                   />
@@ -137,7 +177,7 @@ export function NavigationBar({
           </>
         )}
       </Menu>
-      {status === "authenticated" && session.user && (
+      {!isPublic && status === "authenticated" && session.user && (
         <Menu>
           {({ isOpen }) => (
             <>
@@ -185,7 +225,9 @@ export function NavigationBar({
                 height="128px"
                 zIndex={2000}
               >
-                <NextLink href={`/${inventory}/settings`}>
+                <NextLink
+                  href={`/${inventory ? inventory : currentInventoryId}/settings`}
+                >
                   <MenuItem paddingTop="12px" paddingBottom="12px" px="16px">
                     <Icon
                       as={FiSettings}

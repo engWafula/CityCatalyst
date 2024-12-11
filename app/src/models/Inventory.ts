@@ -3,6 +3,10 @@ import { DataTypes, Model, Optional } from "sequelize";
 import type { City, CityId } from "./City";
 import type { InventoryValue, InventoryValueId } from "./InventoryValue";
 import type { Version, VersionId } from "./Version";
+import {
+  GlobalWarmingPotentialTypeEnum,
+  InventoryTypeEnum,
+} from "@/util/enums";
 
 export interface InventoryAttributes {
   inventoryId: string;
@@ -10,6 +14,12 @@ export interface InventoryAttributes {
   year?: number;
   totalEmissions?: number;
   cityId?: string;
+  totalCountryEmissions?: number;
+  isPublic?: boolean;
+  publishedAt?: Date | null;
+  inventoryType?: InventoryTypeEnum;
+  globalWarmingPotentialType?: GlobalWarmingPotentialTypeEnum;
+  lastUpdated?: Date | null;
 }
 
 export type InventoryPk = "inventoryId";
@@ -18,7 +28,14 @@ export type InventoryOptionalAttributes =
   | "inventoryName"
   | "year"
   | "totalEmissions"
-  | "cityId";
+  | "cityId"
+  | "totalCountryEmissions"
+  | "isPublic"
+  | "publishedAt"
+  | "inventoryType"
+  | "globalWarmingPotentialType"
+  | "lastUpdated";
+
 export type InventoryCreationAttributes = Optional<
   InventoryAttributes,
   InventoryOptionalAttributes
@@ -33,7 +50,12 @@ export class Inventory
   year?: number;
   totalEmissions?: number;
   cityId?: string;
-
+  totalCountryEmissions?: number;
+  isPublic?: boolean;
+  publishedAt?: Date | null;
+  lastUpdated?: Date | null;
+  inventoryType?: InventoryTypeEnum;
+  globalWarmingPotentialType?: GlobalWarmingPotentialTypeEnum;
   // Inventory belongsTo City via cityId
   city!: City;
   getCity!: Sequelize.BelongsToGetAssociationMixin<City>;
@@ -117,12 +139,44 @@ export class Inventory
           },
           field: "city_id",
         },
+        totalCountryEmissions: {
+          type: DataTypes.BIGINT,
+          allowNull: true,
+          field: "total_country_emissions",
+        },
+        isPublic: {
+          type: DataTypes.BOOLEAN,
+          allowNull: true,
+          field: "is_public",
+        },
+        publishedAt: {
+          type: DataTypes.DATE,
+          allowNull: true,
+          field: "published_at",
+        },
+        inventoryType: {
+          type: DataTypes.ENUM(...Object.values(InventoryTypeEnum)),
+          allowNull: true,
+          field: "inventory_type",
+        },
+        globalWarmingPotentialType: {
+          type: DataTypes.ENUM(
+            ...Object.values(GlobalWarmingPotentialTypeEnum),
+          ),
+          allowNull: true,
+          field: "global_warming_potential_type",
+        },
+        lastUpdated: {
+          type: DataTypes.DATE,
+          allowNull: true,
+          field: "last_updated",
+        },
       },
       {
         sequelize,
         tableName: "Inventory",
         schema: "public",
-        timestamps: false,
+        timestamps: true,
         createdAt: "created",
         updatedAt: "last_updated",
         indexes: [
@@ -132,6 +186,11 @@ export class Inventory
             fields: [{ name: "inventory_id" }],
           },
         ],
+        hooks: {
+          beforeCreate: (inventory) => {
+            inventory.lastUpdated = new Date();
+          },
+        },
       },
     );
   }

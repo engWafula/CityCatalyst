@@ -6,7 +6,8 @@ const { bulkUpsert } = require("./util/util.cjs");
 
 const folders = [
   "EFDB_2006_IPCC_guidelines",
-  // "CarbonFootPrint_2023",
+  "CarbonFootPrint_2023",
+  "ghgprotocol",
 ];
 
 const toJson = ({
@@ -66,14 +67,9 @@ module.exports = {
         const methodologies = await parseFile("Methodology", folder);
         const emissionsFactorsRaw = await parseFile("EmissionsFactor", folder);
         const emissionsFactors = emissionsFactorsRaw.map((ef) => {
-          const metadata = (ef.metadata ? ef.metadata : "")
-            .split(", ")
-            .map((entry) => entry.split(":"));
-          ef.metadata = JSON.stringify(Object.fromEntries(metadata));
-          if (!ef.year) {
-            ef.year = null;
-          }
-
+          const metadata = ef.metadata ? ef.metadata : "{}";
+          ef.metadata = metadata.replace(/'/g, '"');
+          ef.year = !!ef.year ? parseInt(ef.year) : null;
           return ef;
         });
 
@@ -111,7 +107,7 @@ module.exports = {
           emissionsFactors,
           "id",
           transaction,
-          folder == "CarbonFootPrint_2023",
+          // folder == "CarbonFootPrint_2023",
         );
         console.info("Finished adding emissions factors");
         await bulkUpsert(

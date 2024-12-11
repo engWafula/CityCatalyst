@@ -13,14 +13,13 @@ import {
   Text,
   useToast,
 } from "@chakra-ui/react";
-import { FC, useMemo } from "react";
+import { FC } from "react";
 import { SubmitHandler } from "react-hook-form";
 import { TFunction } from "i18next";
 import { CheckCircleIcon } from "@chakra-ui/icons";
 import { getInputMethodology } from "@/util/helpers";
 import type { SuggestedActivity } from "@/util/form-schema";
-import { getTranslationFromDict } from "@/i18n";
-import ActivityModalBody, { ExtraField, Inputs } from "./activity-modal-body";
+import ActivityModalBody, { Inputs } from "./activity-modal-body";
 import { ActivityValue } from "@/models/ActivityValue";
 import { InventoryValue } from "@/models/InventoryValue";
 import useActivityValueValidation from "@/hooks/activity-value-form/use-activity-validation";
@@ -28,6 +27,7 @@ import useActivityForm, {
   generateDefaultActivityFormValues,
 } from "@/hooks/activity-value-form/use-activity-form";
 import { FetchBaseQueryError } from "@reduxjs/toolkit/query";
+import useEmissionFactors from "@/hooks/activity-value-form/use-emission-factors";
 
 interface AddActivityModalProps {
   isOpen: boolean;
@@ -61,40 +61,39 @@ const AddActivityModal: FC<AddActivityModalProps> = ({
   targetActivityValue,
   resetSelectedActivityValue,
 }) => {
-  const { fields, units, title } = useMemo(() => {
-    let fields: ExtraField[] = [];
-    let units = null;
-    let title = null;
-    if (methodology?.id.includes("direct-measure")) {
-      fields = methodology.fields;
-    } else {
-      fields = methodology?.fields[0]["extra-fields"];
-      units = methodology?.fields[0].units;
-      title = methodology?.fields[0]["activity-title"];
-    }
-
-    return {
-      fields,
-      units,
-      title,
-    };
-  }, [methodology]);
-
   const {
-    setError,
+    fields,
+    units,
+    title,
+    activityId,
     setValue,
     setFocus,
     reset,
     handleSubmit,
     register,
+    watch,
     errors,
+    setError,
+    clearErrors,
     control,
+    hideEmissionFactors,
     getValues,
   } = useActivityForm({
     targetActivityValue,
     selectedActivity,
-    methodologyName: methodology?.id,
-    fields,
+    methodology: methodology,
+  });
+
+  const {
+    emissionsFactorTypes,
+    emissionsFactorsLoading: areEmissionFactorsLoading,
+  } = useEmissionFactors({
+    control,
+    setValue,
+    methodologyId: methodology?.id,
+    referenceNumber,
+    inventoryId,
+    fields: fields,
   });
 
   const { handleManalInputValidationError } = useActivityValueValidation({
@@ -106,27 +105,6 @@ const AddActivityModal: FC<AddActivityModalProps> = ({
   const submit = () => {
     handleSubmit(onSubmit)();
   };
-
-  let { data: emissionsFactors, isLoading: emissionsFactorsLoading } =
-    api.useGetEmissionsFactorsQuery({
-      referenceNumber,
-      methodologyId: methodology?.id,
-      inventoryId,
-    });
-
-  // extract and deduplicate data sources from emissions factors
-  const emissionsFactorTypes = useMemo(() => {
-    if (!emissionsFactors) {
-      return [];
-    }
-
-    return emissionsFactors.flatMap((factor) => {
-      return factor.dataSources.map((source) => ({
-        id: source.datasourceId,
-        name: getTranslationFromDict(source.datasetName) ?? "unknown",
-      }));
-    });
-  }, [emissionsFactors]);
 
   const toast = useToast();
 
@@ -150,7 +128,7 @@ const AddActivityModal: FC<AddActivityModalProps> = ({
         const gasObject = {
           ...gasValue,
           gas: gasValue.gas as string,
-          factor: parseInt(data[`${gasValue.gas}EmissionFactor`]),
+          factor: parseFloat(data[`${gasValue.gas}EmissionFactor`]),
           unit: gasValue.emissionsFactor.units as string,
         };
         gasArray.push(gasObject);
@@ -164,7 +142,7 @@ const AddActivityModal: FC<AddActivityModalProps> = ({
       const gasUnitKey = `${gas}EmissionFactorUnit`;
       const gasObject = {
         gas: gas,
-        factor: parseInt(data[gasFactorKey]),
+        factor: parseFloat(data[gasFactorKey]),
         unit: data[gasUnitKey],
       };
 
@@ -183,12 +161,12 @@ const AddActivityModal: FC<AddActivityModalProps> = ({
         values[field.id] = (activity as any)[field.id];
       }
       if (field.units) {
-        values[`${field.id}Unit`] = (activity as any)[`${field.id}Unit`];
+        values[`${field.id}-unit`] = (activity as any)[`${field.id}-unit`];
       }
     });
     if (!methodology?.id.includes("direct-measure")) {
       values[title] = (activity as any)[title];
-      values[`${title}Unit`] = (activity as any)[`${title}Unit`];
+      values[`${title}-unit`] = (activity as any)[`${title}-unit`];
     }
 
     const requestData = {
@@ -202,6 +180,17 @@ const AddActivityModal: FC<AddActivityModalProps> = ({
         : { ...values },
       metadata: {
         emissionFactorType: activity.emissionFactorType,
+        emissionFactorTypeReference: activity.emissionFactorReference,
+        emissionFactorName: activity.emissionFactorName,
+        activityId: activityId,
+        activityTitle: title,
+        ...(methodology.activitySelectionField && {
+          [methodology.activitySelectionField.id]: (activity as any)[
+            methodology.activitySelectionField.id
+          ],
+        }),
+        dataQuality: activity.dataQuality,
+        sourceExplanation: activity.dataComments,
       },
       ...(inventoryValue ? { inventoryValueId: inventoryValue.id } : {}),
       ...(!inventoryValue
@@ -214,15 +203,9 @@ const AddActivityModal: FC<AddActivityModalProps> = ({
             },
           }
         : {}),
-      dataSource: {
-        sourceType: "",
-        dataQuality: activity.dataQuality,
-        notes: activity.dataComments,
-      },
       gasValues: gasValues.map(({ gas, factor, unit, ...rest }) => ({
         ...rest,
         gas,
-        gasAmount: factor,
         emissionsFactor: {
           gas,
           units: unit ?? "",
@@ -276,9 +259,10 @@ const AddActivityModal: FC<AddActivityModalProps> = ({
       if (errorData.error?.type === "ManualInputValidationError") {
         handleManalInputValidationError(errorData.error.issues);
       } else {
+        const error = response.error as FetchBaseQueryError;
         toast({
           status: "error",
-          title: t("activity-value-error"),
+          title: errorData.error?.message || t("activity-value-error"),
         });
       }
     }
@@ -291,6 +275,7 @@ const AddActivityModal: FC<AddActivityModalProps> = ({
       activity: generateDefaultActivityFormValues(
         selectedActivity as SuggestedActivity,
         fields,
+        methodology,
       ),
     });
   };
@@ -326,9 +311,12 @@ const AddActivityModal: FC<AddActivityModalProps> = ({
           <ModalCloseButton marginTop="10px" />
           <ActivityModalBody
             emissionsFactorTypes={emissionsFactorTypes}
+            areEmissionFactorsLoading={areEmissionFactorsLoading}
             title={title}
+            hideEmissionFactors={hideEmissionFactors}
             submit={submit}
             register={register}
+            watch={watch}
             control={control}
             fields={fields}
             units={units}
@@ -338,6 +326,8 @@ const AddActivityModal: FC<AddActivityModalProps> = ({
             getValues={getValues}
             t={t}
             errors={errors}
+            setError={setError}
+            clearErrors={clearErrors}
             setValue={setValue}
           />
           <ModalFooter

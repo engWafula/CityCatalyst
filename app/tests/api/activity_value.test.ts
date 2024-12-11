@@ -1,12 +1,12 @@
 import {
   DELETE as deleteActivityValue,
   GET as getActivityValue,
-  PATCH as updateActivityValue
+  PATCH as updateActivityValue,
 } from "@/app/api/v0/inventory/[inventory]/activity-value/[id]/route";
 
 import {
   DELETE as deleteAllActivitiesInSubsector,
-  POST as createActivityValue
+  POST as createActivityValue,
 } from "@/app/api/v0/inventory/[inventory]/activity-value/route";
 
 import { db } from "@/models";
@@ -36,8 +36,12 @@ import {
   subcategoryName,
   subsectorName,
   updatedActivityValue,
-  validCreateActivity
+  validCreateActivity,
 } from "./activity_value_data";
+import {
+  GlobalWarmingPotentialTypeEnum,
+  InventoryTypeEnum,
+} from "@/util/enums";
 
 describe("Activity Value API", () => {
   let city: City;
@@ -93,6 +97,8 @@ describe("Activity Value API", () => {
       inventoryId: randomUUID(),
       inventoryName: inventoryName,
       cityId: city.cityId,
+      inventoryType: InventoryTypeEnum.GPC_BASIC,
+      globalWarmingPotentialType: GlobalWarmingPotentialTypeEnum.ar6,
     });
 
     sector = await db.models.Sector.create({
@@ -209,7 +215,6 @@ describe("Activity Value API", () => {
     });
 
     assert.equal(findInventory?.inventoryId, inventory.inventoryId);
-    console.log(subSector, "the value");
 
     const req = mockRequest({
       ...validCreateActivity,

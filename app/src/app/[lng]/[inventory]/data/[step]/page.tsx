@@ -10,17 +10,20 @@ import {
   WorldSearchIcon,
 } from "@/components/icons";
 import {
-  InventoryUserFileAttributes,
   clear,
+  InventoryUserFileAttributes,
   removeFile,
 } from "@/features/city/inventoryDataSlice";
-import { setSubsector } from "@/features/city/subsectorSlice";
 import { useTranslation } from "@/i18n/client";
 import { RootState } from "@/lib/store";
 import { api } from "@/services/api";
 import { logger } from "@/services/logger";
-import { bytesToMB, nameToI18NKey } from "@/util/helpers";
-import type { SectorProgress } from "@/util/types";
+import {
+  bytesToMB,
+  convertSectorReferenceNumberToNumber,
+  nameToI18NKey,
+} from "@/util/helpers";
+import type { DataSourceResponse, SectorProgress } from "@/util/types";
 import {
   ArrowBackIcon,
   ChevronRightIcon,
@@ -37,8 +40,8 @@ import {
   Center,
   CircularProgress,
   Flex,
-  HStack,
   Heading,
+  HStack,
   Icon,
   IconButton,
   Link,
@@ -55,9 +58,9 @@ import {
 } from "@chakra-ui/react";
 import { TFunction } from "i18next";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { forwardRef, useEffect, useState } from "react";
 import { Trans } from "react-i18next/TransWithoutContext";
-import { FiTarget, FiTrash2, FiTruck } from "react-icons/fi";
+import { FiTarget, FiTrash2 } from "react-icons/fi";
 import {
   MdAdd,
   MdArrowDropDown,
@@ -66,7 +69,6 @@ import {
   MdHomeWork,
   MdOutlineCheckCircle,
   MdOutlineEdit,
-  MdOutlineHomeWork,
   MdRefresh,
 } from "react-icons/md";
 import { useDispatch, useSelector } from "react-redux";
@@ -81,6 +83,7 @@ import AddFileDataModal from "@/components/Modals/add-file-data-modal";
 import { InventoryValueAttributes } from "@/models/InventoryValue";
 import { motion } from "framer-motion";
 import { getTranslationFromDict } from "@/i18n";
+import { getScopesForInventoryAndSector, SECTORS } from "@/util/constants";
 
 function getMailURI(locode?: string, sector?: string, year?: number): string {
   const emails =
@@ -88,6 +91,12 @@ function getMailURI(locode?: string, sector?: string, year?: number): string {
     "info@openearth.org,greta@openearth.org";
   return `mailto://${emails}?subject=Missing third party data sources&body=City: ${locode}%0ASector: ${sector}%0AYear: ${year}`;
 }
+
+const kebab = (str: string) =>
+  str
+    .replaceAll(/\s+/g, "-")
+    .replaceAll(/[^0-9A-Za-z\-\_]/g, "")
+    .toLowerCase();
 
 function SearchDataSourcesPrompt({
   t,
@@ -186,15 +195,12 @@ export default function AddDataSteps({
 
   const { data: userInfo, isLoading: isUserInfoLoading } =
     api.useGetUserInfoQuery();
-  const defaultInventoryId = userInfo?.defaultInventoryId;
 
   const {
     data: inventoryProgress,
     isLoading: isInventoryProgressLoading,
     error: inventoryProgressError,
-  } = api.useGetInventoryProgressQuery(defaultInventoryId!, {
-    skip: !defaultInventoryId,
-  });
+  } = api.useGetInventoryProgressQuery(inventory);
   const isInventoryLoading = isUserInfoLoading || isInventoryProgressLoading;
   const locode = inventoryProgress?.inventory.city.locode || undefined;
   const year = inventoryProgress?.inventory.year || undefined;
@@ -202,7 +208,7 @@ export default function AddDataSteps({
   const [
     loadDataSources,
     {
-      data: allDataSources,
+      data,
       isLoading: areDataSourcesLoading,
       isFetching: areDataSourcesFetching,
       error: dataSourcesError,
@@ -212,41 +218,16 @@ export default function AddDataSteps({
   const [connectDataSource, { isLoading: isConnectDataSourceLoading }] =
     api.useConnectDataSourceMutation();
 
-  const [steps, setSteps] = useState<DataStep[]>([
-    {
-      title: "stationary-energy",
-      details: "stationary-energy-details",
-      icon: MdOutlineHomeWork,
+  const [steps, setSteps] = useState<DataStep[]>(
+    SECTORS.map((s) => ({
+      ...s,
       connectedProgress: 0,
       addedProgress: 0,
       totalSubSectors: 0,
-      referenceNumber: "I",
       sector: null,
       subSectors: null,
-    },
-    {
-      title: "transportation",
-      details: "transportation-details",
-      icon: FiTruck,
-      connectedProgress: 0,
-      addedProgress: 0,
-      totalSubSectors: 0,
-      referenceNumber: "II",
-      sector: null,
-      subSectors: null,
-    },
-    {
-      title: "waste",
-      details: "waste-details",
-      icon: FiTrash2,
-      connectedProgress: 0,
-      addedProgress: 0,
-      totalSubSectors: 0,
-      referenceNumber: "III",
-      sector: null,
-      subSectors: null,
-    },
-  ]);
+    })),
+  );
 
   useEffect(() => {
     if (inventoryProgress == null) {
@@ -290,9 +271,6 @@ export default function AddDataSteps({
     count: steps.length,
   });
   const currentStep = steps[activeStep];
-  const onStepSelected = (selectedStep: number) => {
-    setActiveStep(selectedStep);
-  };
   useEffect(() => {
     // change step param in URL without reloading
     const newPath = location.pathname.replace(
@@ -309,14 +287,19 @@ export default function AddDataSteps({
     Math.round(percentage * 1000) / 10;
 
   // only display data sources relevant to current sector
-  const dataSources = allDataSources?.filter(({ source, data }) => {
-    const referenceNumber =
-      source.subCategory?.referenceNumber || source.subSector?.referenceNumber;
-    if (!data || !referenceNumber) return false;
-    const sectorReferenceNumber = referenceNumber.split(".")[0];
+  let dataSources: DataSourceResponse | undefined;
+  if (data) {
+    const { data: successfulSources, failedSources, removedSources } = data;
+    dataSources = successfulSources?.filter(({ source, data }) => {
+      const referenceNumber =
+        source.subCategory?.referenceNumber ||
+        source.subSector?.referenceNumber;
+      if (!data || !referenceNumber) return false;
+      const sectorReferenceNumber = referenceNumber.split(".")[0];
 
-    return sectorReferenceNumber === currentStep.referenceNumber;
-  });
+      return sectorReferenceNumber === currentStep.referenceNumber;
+    });
+  }
 
   const [selectedSource, setSelectedSource] =
     useState<DataSourceWithRelations>();
@@ -402,8 +385,21 @@ export default function AddDataSteps({
     );
   }
 
-  function onSearchDataSourcesClicked() {
-    loadDataSources({ inventoryId: inventory });
+  async function onSearchDataSourcesClicked() {
+    const { data, removedSources, failedSources } = await loadDataSources({
+      inventoryId: inventory,
+    }).unwrap();
+
+    // this is printed to debug missing data sources more easily,
+    // TODO consider putting this behind a "dev mode" flag of some kind
+    if (removedSources.length > 0) {
+      console.info("Removed data sources");
+      console.dir(removedSources);
+    }
+    if (failedSources.length > 0) {
+      console.info("Failed data sources");
+      console.dir(failedSources);
+    }
   }
 
   const [selectedSubsector, setSelectedSubsector] =
@@ -466,7 +462,7 @@ export default function AddDataSteps({
   };
 
   const sectorData = getInventoryData.sectors.filter(
-    (sector) => sector.sectorName === currentStep.title,
+    (sector) => sector.sectorName === currentStep.name,
   );
 
   const [deleteUserFile, { isLoading }] = api.useDeleteUserFileMutation();
@@ -532,7 +528,7 @@ export default function AddDataSteps({
       setDisconnectingDataSourceId(null);
       onSearchDataSourcesClicked();
     } else {
-      console.log("Something went wrong");
+      console.error("Something went wrong when disconnecting data source");
     }
   };
 
@@ -592,20 +588,14 @@ export default function AddDataSteps({
     };
   }, []);
 
-  const getCurrentStepParam = (referenceNumber: string) => {
-    switch (referenceNumber) {
-      case 'I':
-        return 1;
-      case 'II':
-        return 2;
-      case 'III':
-        return 3;
-      default:
-        return 1;
-    }
-  };
-
-  const MotionBox = motion(Box);
+  const MotionBox = motion(
+    // the display name is added below, but the linter isn't picking it up
+    // eslint-disable-next-line react/display-name
+    forwardRef<HTMLDivElement, any>((props, ref) => (
+      <Box ref={ref} {...props} />
+    )),
+  );
+  MotionBox.displayName = "MotionBox";
 
   const scrollResizeHeaderThreshold = 50;
   const isExpanded = scrollPosition > scrollResizeHeaderThreshold;
@@ -632,7 +622,7 @@ export default function AddDataSteps({
               variant="ghost"
               fontSize="14px"
               leftIcon={<ArrowBackIcon boxSize={6} />}
-              onClick={() => router.back()}
+              onClick={() => router.push(`/${inventory}/data`)}
             >
               {t("go-back")}
             </Button>
@@ -658,7 +648,7 @@ export default function AddDataSteps({
 
                 <BreadcrumbItem>
                   <BreadcrumbLink href="#" color="content.link">
-                    {t(currentStep.title)}
+                    {t(kebab(currentStep.name))}
                   </BreadcrumbLink>
                 </BreadcrumbItem>
               </Breadcrumb>
@@ -705,16 +695,23 @@ export default function AddDataSteps({
                   className="transition-all duration-50 ease-linear"
                   fontSize={isExpanded ? "headline.sm" : "headline.md"}
                 >
-                  {t(currentStep.title)}
+                  {t(kebab(currentStep.name))}
                 </Heading>
                 {scrollPosition <= 0 ? (
-                  <Text color="content.tertiary">{t(currentStep.details)}</Text>
+                  <Text color="content.tertiary">
+                    {t(currentStep.description)}
+                  </Text>
                 ) : (
                   <Box w="800px"></Box>
                 )}
                 <Text fontWeight="bold" ml={isExpanded ? "-48px" : ""}>
-                  {t("inventory-year")}: 2023 |{" "}
-                  {t("gpc-scope-required-summary")} 1,2
+                  {t("inventory-year")}: {inventoryProgress?.inventory.year} |{" "}
+                  {t("gpc-scope-required")}{" "}
+                  {inventoryProgress?.inventory.inventoryType &&
+                    getScopesForInventoryAndSector(
+                      inventoryProgress.inventory.inventoryType!,
+                      currentStep.referenceNumber,
+                    )?.join(", ")}
                 </Text>
                 <Flex direction="row" ml={isExpanded ? "-48px" : ""}>
                   <SegmentedProgress
@@ -799,7 +796,7 @@ export default function AddDataSteps({
                     className="shadow-none border border-overlay hover:drop-shadow-xl !duration-300 transition-shadow"
                     onClick={() => {
                       router.push(
-                        `/${inventory}/data/${getCurrentStepParam(currentStep.referenceNumber)}/${subSector.subsectorId}`,
+                        `/${inventory}/data/${convertSectorReferenceNumberToNumber(currentStep.referenceNumber)}/${subSector.subsectorId}`,
                       );
                     }}
                     key={subSector.subsectorId}
@@ -1170,7 +1167,7 @@ export default function AddDataSteps({
         <SourceDrawer
           source={selectedSource}
           sourceData={selectedSourceData}
-          sector={currentStep.sector}
+          sector={currentStep.sector ?? undefined}
           isOpen={isSourceDrawerOpen}
           onClose={onSourceDrawerClose}
           onConnectClick={() => onConnectClick(selectedSource!)}

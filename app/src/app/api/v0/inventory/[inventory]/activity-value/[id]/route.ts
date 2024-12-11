@@ -4,8 +4,9 @@ import { apiHandler } from "@/util/api";
 import { createActivityValueRequest } from "@/util/validation";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import ActivityService from "@/backend/ActivityService";
-import { UpdateGasValueInput } from "@/backend/ActivityService";
+import ActivityService, {
+  UpdateGasValueInput,
+} from "@/backend/ActivityService";
 
 export const PATCH = apiHandler(async (req, { params, session }) => {
   const id = z.string().uuid().parse(params.id);
@@ -13,7 +14,6 @@ export const PATCH = apiHandler(async (req, { params, session }) => {
 
   const {
     gasValues,
-    dataSource: dataSourceParams,
     inventoryValue: inventoryValueParams,
     inventoryValueId,
     ...data
@@ -28,7 +28,6 @@ export const PATCH = apiHandler(async (req, { params, session }) => {
     inventoryValueId,
     inventoryValueParams,
     gasValues: gasValues as UpdateGasValueInput[],
-    dataSourceParams,
   });
 
   return NextResponse.json({ success: true, data: result });
@@ -36,14 +35,13 @@ export const PATCH = apiHandler(async (req, { params, session }) => {
 
 export const DELETE = apiHandler(async (_req, { params, session }) => {
   const id = z.string().uuid().parse(params.id);
-  // just for access control
 
+  // just for access control
   await UserService.findUserInventory(params.inventory, session);
 
-  const result = await db.models.ActivityValue.destroy({
-    where: { id },
-  });
-  return NextResponse.json({ success: true, data: result });
+  await ActivityService.deleteActivity(id);
+
+  return NextResponse.json({ success: true });
 });
 
 export const GET = apiHandler(async (_req, { params, session }) => {
@@ -60,6 +58,7 @@ export const GET = apiHandler(async (_req, { params, session }) => {
         where: { inventoryId: params.inventory },
         required: true,
       },
+      // TODO can this join be removed? This was previously only used for data quality and explanation
       { model: db.models.DataSource, as: "dataSource" },
       {
         model: db.models.GasValue,

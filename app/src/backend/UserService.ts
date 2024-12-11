@@ -5,7 +5,7 @@ import { Roles, type AppSession } from "@/lib/auth";
 import type { City } from "@/models/City";
 import type { Inventory } from "@/models/Inventory";
 import type { User } from "@/models/User";
-import type { Includeable } from "sequelize";
+import { col, Includeable } from "sequelize";
 import { UserFile } from "@/models/UserFile";
 
 export default class UserService {
@@ -30,15 +30,16 @@ export default class UserService {
 
     return user;
   }
+
   /**
    * Load city information and perform access control
    */
   public static async findUserCity(
     cityId: string,
     session: AppSession | null,
+    isReadOnly: boolean = false,
   ): Promise<City> {
-    if (!session) throw new createHttpError.Unauthorized("Not signed in");
-    const isAdmin = session.user.role === Roles.Admin;
+    const isAdmin = session?.user?.role === Roles.Admin;
 
     const city = await db.models.City.findOne({
       where: { cityId },
@@ -46,9 +47,6 @@ export default class UserService {
         {
           model: db.models.User,
           as: "users",
-          where: {
-            userId: isAdmin ? undefined : session?.user.id,
-          },
         },
       ],
     });
@@ -56,7 +54,15 @@ export default class UserService {
     if (!city) {
       throw new createHttpError.NotFound("City not found");
     }
-    if (city.users.length === 0 && !isAdmin) {
+    if (isReadOnly || isAdmin) {
+      return city;
+    }
+    if (!session) throw new createHttpError.Unauthorized("Not signed in");
+    if (
+      (city.users.length === 0 ||
+        !city.users.map((u) => u.userId).includes(session?.user?.id)) &&
+      !isAdmin
+    ) {
       throw new createHttpError.Unauthorized("User is not part of this city");
     }
 
@@ -70,9 +76,9 @@ export default class UserService {
     inventoryId: string,
     session: AppSession | null,
     include: Includeable[] = [],
+    isReadOnly: boolean = false,
   ): Promise<Inventory> {
-    if (!session) throw new createHttpError.Unauthorized("Unauthorized");
-    const isAdmin = session.user.role === Roles.Admin;
+    const isAdmin = session?.user?.role === Roles.Admin;
     const inventory = await db.models.Inventory.findOne({
       where: { inventoryId },
       include: [
@@ -85,24 +91,55 @@ export default class UserService {
             {
               model: db.models.User,
               as: "users",
-              where: {
-                userId: isAdmin ? undefined : session?.user.id,
-              },
             },
           ],
         },
       ],
     });
+
     if (!inventory) {
       throw new createHttpError.NotFound("Inventory not found");
     }
-    if (inventory.city.users.length === 0) {
+
+    if ((inventory?.isPublic && isReadOnly) || isAdmin) {
+      return inventory;
+    }
+
+    if (!session) throw new createHttpError.Unauthorized("Unauthorized");
+
+    if (
+      inventory.city.users.length === 0 ||
+      !session?.user?.id ||
+      !inventory.city.users.map((u) => u.userId).includes(session?.user?.id)
+    ) {
       throw new createHttpError.Unauthorized(
         "User is not part of this inventory's city",
       );
     }
 
     return inventory;
+  }
+
+  /**
+   * Load inventory information and perform access control
+   */
+  public static async findUserDefaultInventory(
+    session: AppSession | null,
+  ): Promise<string> {
+    if (!session) throw new createHttpError.Unauthorized("Unauthorized");
+
+    const user = await db.models.User.findOne({
+      attributes: ["defaultInventoryId"],
+      where: {
+        userId: session.user.id,
+      },
+    });
+
+    if (!user || !user.defaultInventoryId) {
+      throw new createHttpError.NotFound("Inventory not found");
+    }
+
+    return user.defaultInventoryId;
   }
 
   /**

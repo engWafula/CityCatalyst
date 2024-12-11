@@ -13,7 +13,6 @@ export const POST = apiHandler(async (req, { params, session }) => {
   const body = createActivityValueRequest.parse(await req.json());
   const {
     gasValues,
-    dataSource: dataSourceParams,
     inventoryValue: inventoryValueParams,
     inventoryValueId,
     ...data
@@ -28,7 +27,6 @@ export const POST = apiHandler(async (req, { params, session }) => {
     inventoryValueId,
     inventoryValueParams,
     gasValues,
-    dataSourceParams,
   );
   return NextResponse.json({ success: !!result, data: result });
 });
@@ -64,9 +62,12 @@ export const GET = apiHandler(async (req, { params, session }) => {
   );
 
   const query: WhereOptions<InventoryValue> = {
-    subCategoryId: { [Op.in]: subCategoryIds },
     inventoryId: inventory.inventoryId,
   };
+
+  if (subCategoryIds && subCategoryIds.length > 0) {
+    query.subCategoryId = { [Op.in]: subCategoryIds };
+  }
   if (methodologyId) {
     query.inputMethodology = methodologyId;
   }

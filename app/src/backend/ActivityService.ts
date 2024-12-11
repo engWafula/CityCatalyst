@@ -5,7 +5,6 @@ import type {
   ActivityValue,
   ActivityValueAttributes,
 } from "@/models/ActivityValue";
-import type { DataSourceI18nAttributes as DataSourceAttributes } from "@/models/DataSourceI18n";
 import type {
   EmissionsFactor,
   EmissionsFactorAttributes,
@@ -19,6 +18,7 @@ import { randomUUID } from "crypto";
 import createHttpError from "http-errors";
 import type { Transaction } from "sequelize";
 import ManualInputValidationService from "./ManualnputValidationService";
+import { decimalToBigInt } from "@/util/big_int";
 
 type GasValueInput = Omit<GasValueCreationAttributes, "id"> & {
   emissionsFactor?: Omit<EmissionsFactorAttributes, "id">;
@@ -29,36 +29,6 @@ export type UpdateGasValueInput = GasValueCreationAttributes & {
 };
 
 export default class ActivityService {
-  private static async updateDataSource({
-    activityValue,
-    dataSourceParams,
-    transaction,
-  }: {
-    activityValue: ActivityValue;
-    dataSourceParams: Omit<DataSourceAttributes, "datasourceId"> | undefined;
-    transaction: Transaction;
-  }): Promise<string> {
-    const dataSource = await db.models.DataSource.findOne({
-      where: { datasourceId: activityValue.datasourceId },
-      transaction,
-    });
-
-    if (!dataSource) {
-      throw new createHttpError.NotFound(
-        "Data source for ActivityValue not found",
-      );
-    }
-
-    // update the data source
-    await dataSource.update(
-      {
-        ...dataSourceParams,
-      },
-      { transaction },
-    );
-    return dataSource.datasourceId;
-  }
-
   private static async updateInventoryValue({
     activityValue,
     inventoryValueParams,
@@ -138,8 +108,10 @@ export default class ActivityService {
       delete gasValue.emissionsFactor;
 
       if (gasValue.gasAmount == null) {
-        gasValue.gasAmount =
-          gases.find((gas) => gas.gas === gasValue.gas)?.amount ?? 0n;
+        gasValue.gasAmount = BigInt(
+          gases.find((gas) => gas.gas === gasValue.gas)?.amount?.toNumber() ??
+            0,
+        );
       }
 
       await db.models.GasValue.upsert(
@@ -161,14 +133,12 @@ export default class ActivityService {
     inventoryValueParams,
     activityValueParams,
     gasValues,
-    dataSourceParams,
   }: {
     id: string;
     activityValueParams: Omit<ActivityValueAttributes, "id">;
     inventoryValueId: string | undefined;
     inventoryValueParams: Omit<InventoryValueAttributes, "id"> | undefined;
     gasValues: UpdateGasValueInput[] | undefined;
-    dataSourceParams: Omit<DataSourceAttributes, "datasourceId"> | undefined;
   }): Promise<ActivityValue | undefined> {
     const activityValue = await db.models.ActivityValue.findOne({
       where: { id },
@@ -190,13 +160,7 @@ export default class ActivityService {
     });
 
     return await db.sequelize?.transaction(
-      async (transaction): Promise<ActivityValue> => {
-        datasourceId = await this.updateDataSource({
-          activityValue,
-          dataSourceParams,
-          transaction,
-        });
-
+      async (transaction: Transaction): Promise<ActivityValue> => {
         const inventoryValue = await this.updateInventoryValue({
           activityValue,
           inventoryValueParams,
@@ -225,7 +189,7 @@ export default class ActivityService {
           BigInt(inventoryValue.co2eq as bigint) -
             BigInt(activityValue.co2eq as bigint) ?? 0n;
 
-        const calculatedCO2e = BigInt(totalCO2e); // Ensure totalCO2e is BigInt
+        const calculatedCO2e = decimalToBigInt(totalCO2e); // Ensure totalCO2e is BigInt
 
         inventoryValue.co2eq = currentCO2e + calculatedCO2e;
         inventoryValue.co2eqYears = Math.max(
@@ -257,7 +221,6 @@ export default class ActivityService {
     inventoryValueId: string | undefined,
     inventoryValueParams: Omit<InventoryValueAttributes, "id"> | undefined,
     gasValues: GasValueInput[] | undefined,
-    dataSourceParams: Omit<DataSourceAttributes, "datasourceId"> | undefined,
   ): Promise<ActivityValue | undefined> {
     // validate using the ManualInputValidationService
     await ManualInputValidationService.validateActivity({
@@ -267,14 +230,6 @@ export default class ActivityService {
 
     return await db.sequelize?.transaction(
       async (transaction: Transaction): Promise<ActivityValue> => {
-        const dataSource = await db.models.DataSource.create(
-          {
-            ...dataSourceParams,
-            datasourceId: randomUUID(),
-          },
-          { transaction },
-        );
-
         if (inventoryValueId && inventoryValueParams) {
           throw new createHttpError.BadRequest(
             "Can't use both inventoryValueId and inventoryValue",
@@ -295,9 +250,8 @@ export default class ActivityService {
               inventoryId,
               sectorId,
               subSectorId,
-              subCategoryId,
+              subCategoryId: subCategoryId ?? undefined,
               gpcReferenceNumber: inventoryValueParams.gpcReferenceNumber,
-              datasourceId: dataSource.datasourceId,
             },
             { transaction },
           );
@@ -324,7 +278,6 @@ export default class ActivityService {
         const activityValue = await db.models.ActivityValue.create(
           {
             ...activityValueParams,
-            datasourceId: dataSource.datasourceId,
             inventoryValueId: inventoryValue.id,
             id: randomUUID(),
           },
@@ -340,7 +293,7 @@ export default class ActivityService {
           );
 
         const currentCO2e = BigInt(inventoryValue.co2eq ?? 0n);
-        const calculatedCO2e = BigInt(totalCO2e); // Ensure totalCO2e is BigInt
+        const calculatedCO2e = decimalToBigInt(totalCO2e); // Ensure totalCO2e is BigInt
 
         inventoryValue.co2eq = currentCO2e + calculatedCO2e;
         inventoryValue.co2eqYears = Math.max(
@@ -349,7 +302,7 @@ export default class ActivityService {
         );
 
         await inventoryValue.save({ transaction });
-        activityValue.co2eq = totalCO2e;
+        activityValue.co2eq = decimalToBigInt(totalCO2e);
         activityValue.co2eqYears = totalCO2eYears;
         await activityValue.save({ transaction });
 
@@ -381,8 +334,11 @@ export default class ActivityService {
             delete gasValue.emissionsFactor;
 
             if (gasValue.gasAmount == null) {
-              gasValue.gasAmount =
-                gases.find((gas) => gas.gas === gasValue.gas)?.amount ?? 0n;
+              gasValue.gasAmount = BigInt(
+                gases
+                  .find((gas) => gas.gas === gasValue.gas)
+                  ?.amount?.toNumber() ?? 0,
+              );
             }
 
             await db.models.GasValue.create(
@@ -401,6 +357,56 @@ export default class ActivityService {
         return activityValue;
       },
     );
+  }
+
+  public static async deleteActivity(id: string): Promise<void> {
+    return await db.sequelize?.transaction(async (transaction) => {
+      const activityValue = await db.models.ActivityValue.findByPk(id, {
+        include: {
+          model: db.models.InventoryValue,
+          as: "inventoryValue",
+          include: [
+            {
+              model: db.models.ActivityValue,
+              as: "activityValues",
+              attributes: ["id", "co2eqYears"],
+            },
+          ],
+        },
+      });
+
+      if (!activityValue) {
+        throw new createHttpError.NotFound(
+          `Activity value with ID ${id} not found`,
+        );
+      }
+
+      const inventoryValue = activityValue?.inventoryValue;
+
+      const activityCount = inventoryValue?.activityValues.length;
+      await activityValue.destroy({ transaction });
+
+      // delete the InventoryValue when its last ActivityValue is deleted
+      if (activityCount <= 1) {
+        await inventoryValue.destroy({ transaction });
+      } else {
+        inventoryValue.co2eq =
+          BigInt(inventoryValue.co2eq ?? 0n) -
+          BigInt(activityValue.co2eq ?? 0n);
+
+        // re-calculate co2eqYears by taking max value of remaining activity values
+        let maxCo2eqYears = 0;
+        for (const activityValue of inventoryValue.activityValues) {
+          maxCo2eqYears = Math.max(
+            maxCo2eqYears,
+            activityValue.co2eqYears ?? 0,
+          );
+        }
+        inventoryValue.co2eqYears = maxCo2eqYears;
+
+        await inventoryValue.save({ transaction });
+      }
+    });
   }
 
   public static async deleteAllActivitiesInSubsector({

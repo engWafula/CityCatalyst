@@ -2,25 +2,31 @@ import {
   type CityAttributes,
   type InventoryAttributes,
   type InventoryValueAttributes,
-  PopulationAttributes,
+  type PopulationAttributes,
   type UserAttributes,
 } from "@/models/init-models";
 import type { BoundingBox } from "@/util/geojson";
-import type {
+import {
+  CitiesAndYearsResponse,
   ConnectDataSourceQuery,
   ConnectDataSourceResponse,
-  DataSourceResponse,
   EmissionsFactorResponse,
+  GetDataSourcesResult,
   InventoryProgressResponse,
   InventoryResponse,
+  InventoryUpdateQuery,
+  InventoryValueInSubSectorDeleteQuery,
+  InventoryValueInSubSectorScopeUpdateQuery,
   InventoryValueResponse,
   InventoryValueUpdateQuery,
   InventoryWithCity,
+  RequiredScopesResponse,
+  ResultsResponse,
+  SectorBreakdownResponse,
   UserFileResponse,
   UserInfoResponse,
   UserInviteResponse,
-  RequiredScopesResponse,
-  ResultsResponse,
+  YearOverYearResultsResponse,
 } from "@/util/types";
 import type { GeoJSON } from "geojson";
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
@@ -37,9 +43,23 @@ export const api = createApi({
     "UserData",
     "FileData",
     "CityData",
+    "ReportResults",
+    "YearlyReportResults",
+    "SectorBreakdown",
+    "Inventory",
+    "CitiesAndInventories",
   ],
   baseQuery: fetchBaseQuery({ baseUrl: "/api/v0/", credentials: "include" }),
   endpoints: (builder) => ({
+    getCitiesAndYears: builder.query<CitiesAndYearsResponse[], void>({
+      query: () => "user/cities",
+      transformResponse: (response: { data: CitiesAndYearsResponse[] }) =>
+        response.data.map(({ city, years }) => ({
+          city,
+          years: years.sort((a, b) => b.year - a.year),
+        })),
+      providesTags: ["CitiesAndInventories"],
+    }),
     getCity: builder.query<CityAttributes, string>({
       query: (cityId) => `city/${cityId}`,
       transformResponse: (response: { data: CityAttributes }) => response.data,
@@ -56,9 +76,10 @@ export const api = createApi({
       }) => response,
     }),
     getInventory: builder.query<InventoryResponse, string>({
-      query: (inventoryId) => `inventory/${inventoryId}`,
+      query: (inventoryId: string) => `inventory/${inventoryId}`,
       transformResponse: (response: { data: InventoryResponse }) =>
         response.data,
+      providesTags: ["Inventory"],
     }),
     getRequiredScopes: builder.query<RequiredScopesResponse, string>({
       query: (sectorId) => `sector/${sectorId}/required-scopes`,
@@ -68,6 +89,33 @@ export const api = createApi({
     getResults: builder.query<ResultsResponse, string>({
       query: (inventoryId: string) => `inventory/${inventoryId}/results`,
       transformResponse: (response: { data: ResultsResponse }) => response.data,
+      providesTags: ["ReportResults"],
+    }),
+    getYearOverYearResults: builder.query<YearOverYearResultsResponse, string>({
+      query: (cityId: string) => `user/cities/${cityId}/results`,
+      transformResponse: (response: { data: YearOverYearResultsResponse }) =>
+        response.data,
+      providesTags: ["YearlyReportResults"],
+    }),
+    getSectorBreakdown: builder.query<
+      SectorBreakdownResponse,
+      {
+        inventoryId: string;
+        sector: string;
+      }
+    >({
+      query: ({
+        inventoryId,
+        sector,
+      }: {
+        inventoryId: string;
+        sector: string;
+      }) => {
+        return `inventory/${inventoryId}/results/${sector}`;
+      },
+      transformResponse: (response: { data: SectorBreakdownResponse }) =>
+        response.data,
+      providesTags: ["SectorBreakdown"],
     }),
     getInventoryProgress: builder.query<InventoryProgressResponse, string>({
       query: (inventoryId) => `inventory/${inventoryId}/progress`,
@@ -97,7 +145,14 @@ export const api = createApi({
     }),
     addInventory: builder.mutation<
       InventoryAttributes,
-      { cityId: string; year: number; inventoryName: string }
+      {
+        cityId: string;
+        year: number;
+        inventoryName: string;
+        totalCountryEmissions: number;
+        globalWarmingPotentialType: string;
+        inventoryType: string;
+      }
     >({
       query: (data) => ({
         url: `/city/${data.cityId}/inventory`,
@@ -106,7 +161,7 @@ export const api = createApi({
       }),
       transformResponse: (response: { data: InventoryAttributes }) =>
         response.data,
-      invalidatesTags: ["UserInventories"],
+      invalidatesTags: ["UserInventories", "CitiesAndInventories"],
     }),
     setUserInfo: builder.mutation<
       UserAttributes,
@@ -126,12 +181,11 @@ export const api = createApi({
       providesTags: ["UserInfo"],
     }),
     getAllDataSources: builder.query<
-      DataSourceResponse,
+      GetDataSourcesResult,
       { inventoryId: string }
     >({
       query: ({ inventoryId }) => `datasource/${inventoryId}`,
-      transformResponse: (response: { data: DataSourceResponse }) =>
-        response.data,
+      transformResponse: (response: GetDataSourcesResult) => response,
     }),
     getInventoryValue: builder.query<
       InventoryValueResponse,
@@ -196,6 +250,31 @@ export const api = createApi({
       transformResponse: (response: { data: ConnectDataSourceResponse }) =>
         response.data,
       invalidatesTags: ["InventoryProgress"],
+    }),
+    updateOrCreateInventoryValue: builder.mutation<
+      InventoryValueAttributes,
+      InventoryValueInSubSectorScopeUpdateQuery
+    >({
+      query: (data) => ({
+        url: `/inventory/${data.inventoryId}/value/subsector/${data.subSectorId}`,
+        method: "PATCH",
+        body: data.data,
+      }),
+      transformResponse: (response: { data: InventoryValueAttributes }) =>
+        response.data,
+      invalidatesTags: ["InventoryProgress", "InventoryValue"],
+    }),
+    deleteInventoryValue: builder.mutation<
+      InventoryValueAttributes,
+      InventoryValueInSubSectorDeleteQuery
+    >({
+      query: (data) => ({
+        url: `/inventory/${data.inventoryId}/value/subsector/${data.subSectorId}`,
+        method: "DELETE",
+      }),
+      transformResponse: (response: { data: InventoryValueAttributes }) =>
+        response.data,
+      invalidatesTags: ["InventoryProgress", "InventoryValue"],
     }),
     getUserInventories: builder.query<InventoryWithCity[], void>({
       query: () => "/user/inventories",
@@ -389,11 +468,15 @@ export const api = createApi({
         methodologyId: string;
         inventoryId: string;
         referenceNumber: string;
+        metadata?: Record<string, any>;
       }
     >({
       query: (params) => {
-        const queryString = new URLSearchParams(params).toString();
-        return `/emissions-factor${queryString ? `?${queryString}` : ""}`;
+        return {
+          url: `/emissions-factor`,
+          method: "POST",
+          body: params,
+        };
       },
       transformResponse: (response: { data: EmissionsFactorResponse }) => {
         return response.data;
@@ -466,6 +549,7 @@ export const api = createApi({
         params: {
           subCategoryIds: subCategoryIds?.join(",") ?? undefined,
           subSectorId: subSectorId ?? undefined,
+          methodologyId: methodologyId ?? undefined,
         },
         method: "GET",
       }),
@@ -479,7 +563,14 @@ export const api = createApi({
         body: data.requestData,
       }),
       transformResponse: (response: any) => response.data,
-      invalidatesTags: ["ActivityValue", "InventoryValue"],
+      invalidatesTags: [
+        "ActivityValue",
+        "InventoryValue",
+        "InventoryProgress",
+        "YearlyReportResults",
+        "ReportResults",
+        "SectorBreakdown",
+      ],
     }),
     getActivityValue: builder.query({
       query: (data: { inventoryId: string; valueId: string }) => ({
@@ -496,15 +587,29 @@ export const api = createApi({
         body: data.data,
       }),
       transformResponse: (response: any) => response.data,
-      invalidatesTags: ["ActivityValue"],
+      invalidatesTags: [
+        "ActivityValue",
+        "InventoryValue",
+        "InventoryProgress",
+        "ReportResults",
+        "YearlyReportResults",
+        "SectorBreakdown",
+      ],
     }),
     deleteActivityValue: builder.mutation({
       query: (data: { activityValueId: string; inventoryId: string }) => ({
         method: "DELETE",
         url: `/inventory/${data.inventoryId}/activity-value/${data.activityValueId}`,
       }),
-      transformResponse: (response: any) => response.data,
-      invalidatesTags: ["ActivityValue"],
+      transformResponse: (response: { success: boolean }) => response,
+      invalidatesTags: [
+        "ActivityValue",
+        "InventoryValue",
+        "InventoryProgress",
+        "ReportResults",
+        "SectorBreakdown",
+        "YearlyReportResults",
+      ],
     }),
     deleteAllActivityValues: builder.mutation({
       query: (data: {
@@ -520,7 +625,14 @@ export const api = createApi({
         },
       }),
       transformResponse: (response: any) => response.data,
-      invalidatesTags: ["ActivityValue", "InventoryValue"],
+      invalidatesTags: [
+        "ActivityValue",
+        "InventoryValue",
+        "InventoryProgress",
+        "ReportResults",
+        "YearlyReportResults",
+        "SectorBreakdown",
+      ],
     }),
     createThreadId: builder.mutation({
       query: (data: { inventoryId: string; content: string }) => ({
@@ -535,6 +647,19 @@ export const api = createApi({
       }),
       transformResponse: (response: { threadId: string }) => response.threadId,
     }),
+    updateInventory: builder.mutation<
+      InventoryAttributes,
+      InventoryUpdateQuery
+    >({
+      query: (data) => ({
+        url: `/inventory/${data.inventoryId}`,
+        method: "PATCH",
+        body: data.data,
+      }),
+      transformResponse: (response: { data: InventoryAttributes }) =>
+        response.data,
+      invalidatesTags: ["Inventory"],
+    }),
   }),
 });
 
@@ -547,7 +672,7 @@ export const openclimateAPI = createApi({
   }),
   endpoints: (builder) => ({
     getOCCity: builder.query<any, string>({
-      query: (q) => `/api/v1/search/actor?q=${q}`,
+      query: (q) => `/api/v1/search/city?q=${q}`,
       transformResponse: (response: any) => {
         return response.data.filter((item: any) => item.type === "city");
       },
@@ -569,6 +694,8 @@ export const GLOBAL_API_URL =
 // hooks are automatically generated
 export const {
   useGetCityQuery,
+  useGetCitiesAndYearsQuery,
+  useGetYearOverYearResultsQuery,
   useAddCityMutation,
   useAddInventoryMutation,
   useSetUserInfoMutation,
@@ -596,6 +723,9 @@ export const {
   useDeleteAllActivityValuesMutation,
   useDeleteActivityValueMutation,
   useGetInventoryValuesBySubsectorQuery,
+  useDeleteInventoryValueMutation,
   useGetResultsQuery,
+  useUpdateInventoryMutation,
+  useUpdateOrCreateInventoryValueMutation,
 } = api;
 export const { useGetOCCityQuery, useGetOCCityDataQuery } = openclimateAPI;

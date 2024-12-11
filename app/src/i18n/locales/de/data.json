@@ -1,17 +1,17 @@
 {
   "data-heading": "Daten hinzufügen, um Ihre Treibhausgasinventur (THG-Inventur) zu vervollständigen",
   "data-details": "Verbinden Sie Drittanbieterdaten oder laden Sie Ihre eigenen Daten hoch, um Ihre THG-Inventur nach der GPC-Basismethodik zu erstellen",
+  "data-details-+": "Verbinden Sie Drittanbieterdaten oder laden Sie Ihre eigenen Daten hoch, um Ihre THG-Inventur nach der GPC-Basismethodik zu erstellen",
   "data-view-heading": "Sehen Sie die benötigten Daten, um die Inventur Ihrer Stadt abzuschließen",
   "data-view-details": "Die GPC-Basis umfasst drei Hauptsektoren: Stationäre Energie, Transport und Abfall. Geben Sie die notwendigen Daten für jeden Sektor ein, um eine umfassende THG-Inventur zu erstellen. <2>Weitere Informationen</2>",
+  "scope-required-for-basic": "Umfang erforderlich für die Grund-THG-Inventur",
+  "scope-required-for-basic-+": "Umfang erforderlich für die Grund-THG-Inventur+",
   "stationary-energy": "Stationäre Energie",
   "stationary-energy-details": "Dieser Sektor befasst sich mit Emissionen, die aus der Erzeugung und dem Verbrauch von Strom, Wärme und Dampf resultieren.",
-  "stationary-energy-scope": "Umfang erforderlich für die Grund-THG-Inventur: 1, 2",
   "transportation": "Transport",
   "transportation-details": "Dieser Sektor befasst sich mit Emissionen aus dem Transport von Gütern und Personen innerhalb der Stadtgrenzen.",
-  "transportation-scope": "Umfang erforderlich für die Grund-THG-Inventur: 1, 2",
   "waste": "Abfall und Abwasser",
   "waste-details": "Dieser Sektor umfasst Emissionen, die durch Abfallbewirtschaftungsprozesse erzeugt werden.",
-  "waste-scope": "Umfang erforderlich für die Grund-THG-Inventur: 1, 3",
   "add-data-to-inventory": "Daten zur Inventur hinzufügen",
   "completion-percent": "{{progress}}% abgeschlossen",
   "data-connected-percent": "{{progress}}% Drittanbieterdaten verbunden",
@@ -104,6 +104,7 @@
   "upload-your-data-details": "Laden Sie hier Ihre Dateien hoch und wir passen Ihre Datenstrukturen an, um sie zu harmonisieren und zu integrieren, um Ihr GPC Core Standard-Emissionsinventar zu berechnen.",
   "review-your-data-heading": "Uberprüfen Sie die Daten, die Sie gerade hinzugefügt haben",
   "gpc-scope-required": "Erforderlicher Umfang für das GPC-Basisinventar:",
+  "gpc-scope-required-+": "Erforderlicher Umfang für das GPC-Basisinventar:",
   "edit-sector": "Sektor bearbeiten",
   "discard-sector-changes": "Sektoränderungen verwerfen",
   "third-party-data": "Verbundene Daten von Drittanbietern",
@@ -119,10 +120,8 @@
   "add-custom": "Benutzerdefiniert",
   "save-missing-scope-info": "Speichern oder fehlende Informationen ausfüllen, bevor Sie fortfahren.",
   "disconnect-data": "Datenquelle trennen",
-
   "error": "Fehler",
   "missing-population": "Der Stadt fehlt die Bevölkerungszahl/ Regionsbevölkerungszahl/ Landesbevölkerungszahl für ein Jahr nahe dem Inventarjahr",
-
   "transform-data-description": "Lorem ipsum dolor sit amet, qui minim labore adipisicing minim sint cillum sint consectetur cupidatat.",
   "file-context": "Erzählen Sie uns mehr über diese Datei",
   "file-data-subtitle": "Welche Art von Daten enthält sie?",
@@ -131,5 +130,12 @@
   "scopes": "Bereiche",
   "cancel": "Abbrechen",
   "upload": "Hochladen",
-  "select-placeholder": "Wählen Sie die Untersektoren aus, die in dieser Datei enthalten sind"
+  "select-placeholder": "Wählen Sie die Untersektoren aus, die in dieser Datei enthalten sind",
+  "dependent-extra-field-placeholder": "Wählen Sie zuerst {{dependency}}",
+  "industrial-processes-direct-measure-methodology": "Direkte Messung",
+  "industrial-processes-direct-measure-methodology-description": "Direkte Messung der Emissionen aus industriellen Prozessen.",
+  "product-use-direct-measure-methodology": "Direkte Messung",
+  "product-use-direct-measure-methodology-description": "Direkte Messung der Emissionen aus der Produktnutzung.",
+  "custom-emission-factor-reference": "Benutzerdefinierter Emissionsfaktor",
+  "custom-emission-factor-name": "Benutzerdefinierter Emissionsfaktor"
 }

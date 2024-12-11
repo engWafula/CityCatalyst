@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { GlobalWarmingPotentialTypeEnum, InventoryTypeEnum } from "./enums";
 
 export const emailPattern =
   /^(([^<>()[\]\\.,;:\s@\"]+(\.[^<>()[\]\\.,;:\s@\"]+)*)|(\".+\"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
@@ -32,8 +33,22 @@ export const createInventoryRequest = z.object({
   inventoryName: z.string().min(1),
   year: z.number().int().min(2000),
   totalEmissions: z.number().int().optional(),
+  totalCountryEmissions: z.number().int().optional(),
+  inventoryType: z.nativeEnum(InventoryTypeEnum),
+  globalWarmingPotentialType: z.nativeEnum(GlobalWarmingPotentialTypeEnum),
 });
+
 export type CreateInventoryRequest = z.infer<typeof createInventoryRequest>;
+
+export const upsertInventoryRequest = z.union([
+  createInventoryRequest.strict(),
+  z
+    .object({
+      isPublic: z.boolean().optional(),
+    })
+    .strict(),
+]);
+export type UpsertInventoryRequest = z.infer<typeof upsertInventoryRequest>;
 
 // enforces: min one upper- and lowercase charater and one number, min length 4 characters
 export const passwordRegex =
@@ -68,6 +83,7 @@ export const createInventoryValue = z.object({
   activityUnits: z.string().nullable().optional(),
   co2eq: z.coerce.bigint().gte(0n).optional(),
   co2eqYears: z.number().optional(),
+  gpcReferenceNumber: z.string().optional(),
   unavailableReason: z.string().optional(),
   unavailableExplanation: z.string().optional(),
   gasValues: z
@@ -87,13 +103,16 @@ export const createInventoryValue = z.object({
       }),
     )
     .optional(),
-  dataSource: z
-    .object({
-      sourceType: z.string(),
-      dataQuality: z.string(),
-      notes: z.string(),
-    })
-    .optional(),
+});
+
+export const patchInventoryValue = z.object({
+  activityValue: z.number().nullable().optional(),
+  activityUnits: z.string().nullable().optional(),
+  co2eq: z.coerce.bigint().gte(0n).optional(),
+  co2eqYears: z.number().optional(),
+  gpcReferenceNumber: z.string(),
+  unavailableReason: z.string().optional(),
+  unavailableExplanation: z.string().optional(),
 });
 
 export type CreateInventoryValueRequest = z.infer<typeof createInventoryValue>;
@@ -176,13 +195,6 @@ export const updateActivityValueRequest = z.object({
     .optional(),
   activityData: z.any().optional(),
   metadata: z.any().optional(),
-  dataSource: z
-    .object({
-      sourceType: z.string(),
-      dataQuality: z.string(),
-      notes: z.string(),
-    })
-    .optional(),
   gasValues: z.array(gasValueSchema).optional(),
 });
 
@@ -198,16 +210,17 @@ export const createActivityValueRequest = z.object({
       unavailableExplanation: z.string().optional(),
     })
     .optional(),
-  dataSource: z
-    .object({
-      sourceType: z.string(),
-      dataQuality: z.string(),
-      notes: z.string(),
-    })
-    .optional(),
   gasValues: z.array(gasValueSchema).optional(),
 });
 
 export type CreateActivityValueRequest = z.infer<
   typeof createActivityValueRequest
 >;
+
+export const fetchEmissionsFactorRequest = z.object({
+  inventoryId: z.string().optional(),
+  referenceNumber: z.string().optional(),
+  methodologyId: z.string().optional(),
+  regionLocode: z.string().optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
+});
