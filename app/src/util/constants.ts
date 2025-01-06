@@ -39,12 +39,16 @@ export const getSectorsForInventory = (inventoryType?: InventoryType) => {
   });
 };
 
+function findBy(field: keyof ISector, referenceNumber: string) {
+  return SECTORS.find((s) => s[field] === referenceNumber);
+}
+
 export const getScopesForInventoryAndSector = (
   inventoryType: InventoryType,
   referenceNumber: string,
 ) => {
   if (!inventoryType) return [];
-  const sector = SECTORS.find((s) => s.referenceNumber === referenceNumber);
+  const sector = findBy("referenceNumber", referenceNumber);
   if (!sector) {
     console.error(
       `Sector ${referenceNumber} for inventoryType ${inventoryType} not found`,
@@ -63,7 +67,7 @@ export const SECTORS: ISector[] = [
     icon: TbBuildingCommunity,
     inventoryTypes: {
       [InventoryTypeEnum.GPC_BASIC]: { scopes: [1, 2] },
-      [InventoryTypeEnum.GPC_BASIC_PLUS]: { scopes: [1, 2] }, // [ON-2853] restore scope 3
+      [InventoryTypeEnum.GPC_BASIC_PLUS]: { scopes: [1, 2, 3] },
     },
     testId: "stationary-energy-sector-card",
   },
@@ -75,7 +79,7 @@ export const SECTORS: ISector[] = [
     icon: BsTruck,
     inventoryTypes: {
       [InventoryTypeEnum.GPC_BASIC]: { scopes: [1, 2] },
-      [InventoryTypeEnum.GPC_BASIC_PLUS]: { scopes: [1, 2] }, // [ON-2853] restore scope 3
+      [InventoryTypeEnum.GPC_BASIC_PLUS]: { scopes: [1, 2, 3] },
     },
     testId: "transportation-sector-card",
   },
@@ -116,3 +120,6 @@ export const SECTORS: ISector[] = [
     },
   },
 ];
+
+export const getReferenceNumberByName = (name: keyof ISector) =>
+  findBy("name", name)?.referenceNumber;

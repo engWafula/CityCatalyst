@@ -1,7 +1,6 @@
 "use client";
-
 import { useTranslation } from "@/i18n/client";
-import { InventoryResponse, SectorEmission } from "@/util/types";
+import { CityYearData, InventoryResponse, SectorEmission } from "@/util/types";
 import {
   Box,
   Card,
@@ -17,6 +16,7 @@ import {
   TabPanels,
   Tabs,
   Text,
+  useToast,
 } from "@chakra-ui/react";
 import { TabHeader } from "@/components/HomePage/TabHeader";
 import EmissionsWidget from "@/app/[lng]/[inventory]/InventoryResultTab/EmissionsWidget";
@@ -24,24 +24,28 @@ import TopEmissionsWidget from "@/app/[lng]/[inventory]/InventoryResultTab/TopEm
 import { BlueSubtitle } from "@/components/blue-subtitle";
 import { PopulationAttributes } from "@/models/Population";
 import type { TFunction } from "i18next";
-import { capitalizeFirstLetter, toKebabCase } from "@/util/helpers";
-import React, { ChangeEvent, useMemo, useState } from "react";
+import {
+  capitalizeFirstLetter,
+  isEmptyObject,
+  toKebabCase,
+} from "@/util/helpers";
+import React, { ChangeEvent, useMemo, useState, useEffect } from "react";
 import {
   api,
-  useGetCitiesAndYearsQuery,
+  useGetCityYearsQuery,
   useGetYearOverYearResultsQuery,
 } from "@/services/api";
 import ByScopeView from "@/app/[lng]/[inventory]/InventoryResultTab/ByScopeView";
 import { SectorHeader } from "@/app/[lng]/[inventory]/InventoryResultTab/SectorHeader";
 import { ByActivityView } from "@/app/[lng]/[inventory]/InventoryResultTab/ByActivityView";
 import { getSectorsForInventory, SECTORS } from "@/util/constants";
-import { Selector } from "@/components/selector";
 import { EmptyStateCardContent } from "@/app/[lng]/[inventory]/InventoryResultTab/EmptyStateCardContent";
 import { Trans } from "react-i18next/TransWithoutContext";
 import ButtonGroupToggle from "@/components/button-group-toggle";
 import { MdBarChart, MdTableChart } from "react-icons/md";
 import EmissionBySectorTableSection from "@/app/[lng]/[inventory]/InventoryResultTab/EmissionBySectorTable";
 import EmissionBySectorChart from "@/app/[lng]/[inventory]/InventoryResultTab/EmissionBySectorChart";
+import { EmissionsForecastSection } from "@/app/[lng]/[inventory]/InventoryResultTab/EmissionsForecast/EmissionsForecastSection";
 
 enum TableView {
   BY_ACTIVITY = "by-activity",
@@ -73,6 +77,7 @@ function SectorTabs({
   const [selectedTableView, setSelectedTableView] = useState<TableView>(
     TableView.BY_ACTIVITY,
   );
+  const [isLoadingNewData, setIsLoadingNewData] = useState(false);
   const getDataForSector = (sectorName: string) =>
     results?.totalEmissions.bySector.find(
       (e) =>
@@ -82,18 +87,45 @@ function SectorTabs({
   const { data: results, isLoading: isTopEmissionsResponseLoading } =
     api.useGetResultsQuery(inventory!.inventoryId!);
 
-  const { data: sectorBreakdown, isLoading: isResultsLoading } =
-    api.useGetSectorBreakdownQuery({
-      inventoryId: inventory!.inventoryId!,
-      sector: SECTORS[selectedIndex].name,
+  const {
+    data: sectorBreakdown,
+    isLoading: isResultsLoading,
+    error,
+    refetch,
+  } = api.useGetSectorBreakdownQuery({
+    inventoryId: inventory!.inventoryId!,
+    sector: SECTORS[selectedIndex].name,
+  });
+  const toast = useToast();
+
+  const makeErrorToast = (title: string, description?: string) => {
+    toast({
+      title,
+      description,
+      position: "bottom",
+      status: "error",
+      isClosable: true,
+      duration: 10000,
     });
+  };
+
+  if (error) {
+    makeErrorToast(t("something-went-wrong"), t("error-fetching-sector-data"));
+    console.error("Error fetching sector breakdown:", error);
+  }
+
+  useEffect(() => {
+    setIsLoadingNewData(true);
+    refetch().finally(() => setIsLoadingNewData(false));
+  }, [selectedIndex, refetch]);
 
   const handleViewChange = (event: ChangeEvent<HTMLSelectElement>) => {
     setSelectedTableView(event.target.value as TableView);
   };
 
   const isEmptyInventory =
-    Object.entries(sectorBreakdown?.byActivity || {}).length === 0;
+    Object.entries(sectorBreakdown?.byActivity || {}).length === 0 &&
+    Object.entries(sectorBreakdown?.byScope || {}).length === 0;
 
   return (
     <Tabs
@@ -123,7 +155,7 @@ function SectorTabs({
                   selectedIndex === index ? "content.link" : "content.tertiary"
                 }
               >
-                {capitalizeFirstLetter(t(name))}
+                {t(name)}
               </Text>
             </Tab>
           ),
@@ -135,11 +167,14 @@ function SectorTabs({
           const shouldShowTableByActivity =
             !isEmptyInventory &&
             !isResultsLoading &&
+            false && // ON-3126 restore view by activity
             selectedTableView === TableView.BY_ACTIVITY;
           const shouldShowTableByScope =
             !isEmptyInventory &&
+            inventory &&
             !isResultsLoading &&
-            selectedTableView === TableView.BY_SCOPE;
+            !isLoadingNewData; // &&
+          // selectedTableView === TableView.BY_SCOPE; ON-3126 restore view by activity
           return (
             <TabPanel key={name}>
               {isTopEmissionsResponseLoading ? (
@@ -165,7 +200,7 @@ function SectorTabs({
                     >
                       {t("breakdown-of-sub-sector-emissions")}
                     </Text>
-                    <Box paddingBottom={"12px"}>
+                    {/*<Box paddingBottom={"12px"}>
                       <Selector
                         options={[TableView.BY_ACTIVITY, TableView.BY_SCOPE]}
                         value={selectedTableView}
@@ -173,8 +208,11 @@ function SectorTabs({
                         t={t}
                       />
                     </Box>
+                    {***[ON-3126 restore view by activity]*/}
                   </HStack>
-                  {isResultsLoading && <CircularProgress isIndeterminate />}
+                  {(isResultsLoading || isLoadingNewData) && (
+                    <CircularProgress isIndeterminate />
+                  )}
                   {isEmptyInventory && (
                     <EmptyStateCardContent
                       t={t}
@@ -194,6 +232,7 @@ function SectorTabs({
                   )}
                   {shouldShowTableByScope && (
                     <ByScopeView
+                      inventoryType={inventory.inventoryType}
                       data={sectorBreakdown!.byScope}
                       tData={tData}
                       tDashboard={t}
@@ -262,74 +301,93 @@ export function EmissionPerSectors({
       skip: !inventory?.cityId,
     });
 
-  const { data: citiesAndYears, isLoading } = useGetCitiesAndYearsQuery();
+  const { data: cityYears, isLoading } = useGetCityYearsQuery(
+    inventory?.cityId,
+  );
 
   const loadingState = isLoading || isLoadingYearlgyGhg;
 
   const targetYears = useMemo<
-    | Record<string, { year: number; inventoryId: string; lastUpdate: Date }>
-    | undefined
+    Record<string, { year: number; inventoryId: string; lastUpdate: Date }>
   >(() => {
-    return citiesAndYears
-      ?.find(({ city }) => inventory.cityId === city.cityId)
-      ?.years.reduce(
-        (acc, curr) => {
+    return (
+      cityYears?.years.reduce(
+        (acc: Record<string, CityYearData>, curr: CityYearData) => {
           acc[curr.inventoryId] = curr;
           return acc;
         },
         {} as Record<string, any>,
-      );
-  }, [citiesAndYears, inventory]);
+      ) ?? {}
+    );
+  }, [cityYears]);
 
   const transformedYearOverYearData = useMemo(() => {
-    if (yearlyGhgResult && targetYears) {
+    if (yearlyGhgResult && targetYears && !isEmptyObject(targetYears)) {
       const yearlyMap: Record<string, SectorEmission[]> = {};
-      const response = Object.keys(yearlyGhgResult).map((inventoryId) => {
-        const yearData = targetYears[inventoryId];
-        yearlyMap[yearData.year] =
-          yearlyGhgResult[inventoryId].totalEmissions.totalEmissionsBySector;
-        return {
-          bySector: [
-            ...yearlyGhgResult[inventoryId].totalEmissions
-              .totalEmissionsBySector,
-          ],
-          ...yearData,
-        };
-      });
+      const totalInventoryEmissions: Record<string, bigint> = {};
+      const response = Object.keys(yearlyGhgResult)
+        .map((inventoryId) => {
+          const year = targetYears[inventoryId]?.year;
+          if (!year) {
+            console.error("Target year missing for inventory " + inventoryId);
+            return null;
+          }
+          const totalEmissions = yearlyGhgResult[inventoryId].totalEmissions;
+          yearlyMap[year] = totalEmissions.totalEmissionsBySector;
+          totalInventoryEmissions[year] = BigInt(totalEmissions.sumOfEmissions);
+
+          return {
+            bySector: [...totalEmissions.totalEmissionsBySector],
+            year,
+            inventoryId,
+          };
+        })
+        .filter((data) => !!data);
 
       // taking the response object let's working on getting the percentage increase for each year
       return response
         .map((data) => {
           const yearWithPercentageIncrease = data.bySector.map((sectorData) => {
+            const inventoryEmissions = totalInventoryEmissions[data.year];
+            if (!inventoryEmissions) {
+              console.error(
+                "Total inventory emissions missing for year " + data.year,
+              );
+            }
+
+            const totalInventoryPercentage = inventoryEmissions
+              ? Number((BigInt(sectorData.co2eq) * 100n) / inventoryEmissions)
+              : null;
+
+            let percentageChange: number | null = null;
             if (data.year - 1 in yearlyMap) {
-              let lastYearData = yearlyMap[data.year - 1].find(
+              const lastYearData = yearlyMap[data.year - 1].find(
                 (sector) => sector.sectorName === sectorData.sectorName,
               );
 
-              // calculate percentage change
-
-              let percentageChange = lastYearData
-                ? Number(
-                    (BigInt(sectorData.co2eq) - BigInt(lastYearData?.co2eq)) *
-                      100n,
-                  ) / Number(sectorData.co2eq)
-                : 100;
-
-              return {
-                ...sectorData,
-                percentageChange,
-              };
+              if (lastYearData) {
+                const sectorAmount = BigInt(sectorData.co2eq);
+                const lastYearDifference =
+                  sectorAmount - BigInt(lastYearData.co2eq);
+                percentageChange = Number(
+                  (lastYearDifference * 100n) / sectorAmount,
+                );
+              }
             }
+
             return {
               ...sectorData,
-              percentageChange: 0n,
+              percentageChange,
+              totalInventoryPercentage,
             };
           });
+
           return {
             ...data,
             bySector: yearWithPercentageIncrease,
           };
         })
+        .filter((data) => !!data)
         .sort((a, b) => b.year - a.year);
     }
     return [];
@@ -447,6 +505,11 @@ export default function InventoryResultTab({
               isPublic={isPublic}
             />
           </HStack>
+          <EmissionsForecastSection
+            inventoryId={inventory.inventoryId}
+            t={t}
+            lng={lng}
+          />
           <EmissionPerSectors
             t={t}
             inventory={inventory}
